@@ -1,0 +1,140 @@
+<html>
+    <head>
+        <title> matrix visualiser </title>
+    </head>
+    <body style="margin: 0; padding: 0; overflow: hidden;">
+        <canvas id="WS" width="1000" height="1000"> </canvas>
+
+        <script src="/socket.io/socket.io.js"></script>
+        <script>
+        var xmax = screen.width - 100;
+        var ymax = screen.height - 100;
+        // shim layer with setTimeout fallback
+        window.requestAnimFrame = (function(){
+        return  window.requestAnimationFrame       ||
+                window.webkitRequestAnimationFrame ||
+                window.mozRequestAnimationFrame    ||
+                function( callback ){
+                    window.setTimeout(callback, 1000 / 60);
+                };
+        })();
+
+        var canvas = document.getElementById('WS');
+        canvas.width = screen.width;
+        canvas.height = screen.height;
+        var ctx = canvas.getContext('2d');
+        
+        var HS = {}, center = {x: xmax / 2, y: ymax / 2}, angle = 0, r = 150;
+        var connection = {};
+
+        function reset() {
+            ctx.fillStyle = "rgb(0,0,0)";
+            ctx.font = "12px Arial";
+            ctx.fillRect(0, 0, canvas.width, canvas.width);
+        }
+        reset();
+
+        var HELPER = {
+            angle: 0,
+            x: xmax / 2,
+            y: ymax / 2,
+            r: 200,
+            blobRadius: 20,
+            getPointInCircle: function() {
+                this.angle += 100;
+                return {
+                    x: this.x + this.r * Math.cos(Math.PI / 180 * this.angle),
+                    y: this.y + this.r * Math.sin(Math.PI / 180 * this.angle)
+                };
+            },
+            printMT: function(x, y, hsid, mt) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'green';
+                ctx.fillStyle = 'green';
+                var start = {x: x, y: y + this.blobRadius + 5};
+                start.x = (start.x > this.x) ? start.x + 25 : start.x - 25;
+                start.y += 25; // (start.y > this.y) ? start.y + 25;// : start.y - 25;
+                ctx.fillText(hsid, start.x, start.y);
+                ctx.moveTo(start.x, start.y + 20);
+                var i = 1;
+                ctx.fillStyle = 'black';
+                ctx.fillRect(start.x - 2, start.y + 13, start.x + 160, start.y + 15 * mt.length);
+                ctx.stroke();
+                ctx.fillStyle = 'green';
+                Object.keys(mt).forEach(function(id) {
+                    ctx.fillText(id, start.x, start.y + i * 15);
+                    ctx.fillText(mt[id].ip +":" +mt[id].port, start.x + 80, start.y + i * 15);
+                    i ++;
+                });
+                ctx.stroke();
+            }
+        };
+
+        // function to plot events
+        function draw(timestamp) {
+            reset();
+            Object.keys(HS).forEach(function(hs) {
+                hs = HS[hs];
+                ctx.strokeStyle = 'green';
+                ctx.fillStyle = 'green';
+                ctx.beginPath();
+                if (typeof hs.pos == 'undefined') {
+                    HS[hs.id].pos = HELPER.getPointInCircle();
+                    hs.pos = HS[hs.id].pos;
+                    angle += 30;
+                }
+
+                ctx.arc(hs.pos.x, hs.pos.y, 20, 0, Math.PI*2, true);
+                ctx.fillText(hs.port, hs.pos.x - 15, hs.pos.y + 5);
+                ctx.stroke();
+
+                HELPER.printMT(hs.pos.x, hs.pos.y, hs.id, hs.mt);
+            });
+
+            this.connection = connection;
+            Object.keys(connection).forEach(function(ck) {
+                var c = this.connection[ck];
+                if (!c.show) return;
+                ctx.strokeStyle = 'red';
+                ctx.beginPath();
+                ctx.moveTo(HS[c.from].pos.x, HS[c.from].pos.y);
+                ctx.lineTo(HS[c.to].pos.x, HS[c.to].pos.y);
+                ctx.stroke();
+            }.bind(this))
+            // window.requestAnimFrame(draw);
+        }
+
+        window.requestAnimFrame(draw);
+
+        var socket = io.connect('http://localhost:8080');
+        socket.on('event', function (d) {
+            try {
+                var d = (d.data);
+                switch (d.category) {
+                    case 'status': break;
+                    case 'connection':
+                        var from = d.data.from, to = d.data.to;
+                        connection[from+to] = d.data;
+                        connection[from+to].show = true;
+                        setTimeout(function() {
+                            connection[from+to].show = false; ;
+                            draw();
+                        }, 1000);
+                        draw();                        
+                        break;
+                    case 'new':
+                        if (typeof HS[d.data.id] != 'undefined') {
+                            var tpos = HS[d.data.id].pos;
+                            HS[d.data.id] = d.data;
+                            HS[d.data.id].pos = tpos;           
+                        } else HS[d.data.id] = d.data;
+                        draw();
+                        break;
+                }
+            } catch (ex) {
+
+            }
+        });
+        </script>
+    </body>
+</html>
